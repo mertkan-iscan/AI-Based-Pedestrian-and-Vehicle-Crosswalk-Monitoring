@@ -120,6 +120,13 @@ def run_live_stream(container):
     return "quit", None
 
 def main():
+
+    # Check if CUDA is enabled
+    if cv2.cuda.getCudaEnabledDeviceCount() > 0:
+        print("CUDA is enabled. Running on GPU.")
+    else:
+        print("CUDA is not enabled. Running on CPU.")
+
     load_polygons()
     while True:
         container = get_container(STREAM_URL)
