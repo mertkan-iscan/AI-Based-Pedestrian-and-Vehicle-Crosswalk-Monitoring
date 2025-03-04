@@ -1,0 +1,8 @@
+[
+    {
+        "name": "konya_1",
+        "camera_name": "konya",
+        "stream_url": "https://content.tvkur.com/l/c77ibcnbb2nj4i0fr8cg/master.m3u8",
+        "polygons_file": "polygons.json"
+    }
+]

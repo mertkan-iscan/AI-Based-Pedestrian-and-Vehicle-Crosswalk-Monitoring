@@ -6,18 +6,18 @@ import os
 from livestream import get_container
 from inference import run_inference
 from tracker import CentroidTracker
-from region_edit import region_editing, overlay_regions, load_polygons, get_polygons_for_point, region_polygons
+import region_edit
+from location_manager import select_location
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-STREAM_URL = "https://content.tvkur.com/l/c77ibcnbb2nj4i0fr8cg/master.m3u8"
 SKIP_FRAMES = 4
 MAX_LATENCY = 0.5
 
-# Global tracker instance (or reinitialize per stream if needed)
 tracker = CentroidTracker(maxDisappeared=40)
 
-def run_live_stream(container):
+def run_live_stream(stream_url):
+    container = get_container(stream_url)
     base_pts = None
     frame_count = 0
     prev_detections = []
@@ -82,29 +82,27 @@ def run_live_stream(container):
                 cv2.putText(img, "Foot", (footX - 20, footY + 15),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
-        # Overlay region polygons (this creates a semi-transparent overlay)
-        img = overlay_regions(img)
+        # Overlay region polygons
+        img = region_edit.overlay_regions(img)
 
-        # Now, redraw the region intersection text on top of the overlay.
+        # Draw region intersection text on top of the overlay
         for objectID, (centroid, bbox) in objects.items():
             if bbox[4] == 0:  # If person
                 footX = int((bbox[0] + bbox[2]) / 2.0)
                 footY = bbox[3]
-                # Check which regions contain the foot point.
-                regions = get_polygons_for_point((footX, footY), region_polygons)
+                regions = region_edit.get_polygons_for_point((footX, footY), region_edit.region_polygons)
                 if regions:
                     region_text = "Region: " + ", ".join(regions)
-                    # Draw the text at the top-left corner of the bounding box
                     cv2.putText(img, region_text, (bbox[0], bbox[1] - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-        # Overlay region polygons
-        img = overlay_regions(img)
+        # Overlay region polygons again
+        img = region_edit.overlay_regions(img)
 
         # Display latency info
         latency_text = f"Latency: {abs(delay):.2f} sec"
         cv2.putText(img, latency_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,255,255), 2)
 
-        # Create a resizable window (maximized size with borders)
+        # Create a resizable window
         cv2.namedWindow("Live Stream with Recognition", cv2.WINDOW_NORMAL)
         cv2.moveWindow("Live Stream with Recognition", 0, 0)
         cv2.resizeWindow("Live Stream with Recognition", 1920, 1080)
@@ -120,17 +118,21 @@ def run_live_stream(container):
     return "quit", None
 
 def main():
+    # Let user select a location from the configuration file
+    selected_location = select_location()
+    if not selected_location:
+        return
 
-    # Check if CUDA is enabled
-    if cv2.cuda.getCudaEnabledDeviceCount() > 0:
-        print("CUDA is enabled. Running on GPU.")
-    else:
-        print("CUDA is not enabled. Running on CPU.")
+    STREAM_URL = selected_location["stream_url"]
+    polygons_file = selected_location["polygons_file"]
 
-    load_polygons()
+    # Update the region_edit module to use the correct polygon file
+    region_edit.region_json_file = polygons_file
+    region_edit.load_polygons()
+
     while True:
         container = get_container(STREAM_URL)
-        ret, frozen = run_live_stream(container)
+        ret, frozen = run_live_stream(STREAM_URL)
         container.close()
         if ret == "quit":
             break
@@ -138,7 +140,7 @@ def main():
             cv2.namedWindow("Region Editing", cv2.WINDOW_NORMAL)
             cv2.moveWindow("Region Editing", 0, 0)
             cv2.resizeWindow("Region Editing", 1920, 1080)
-            region_editing(frozen)
+            region_edit.region_editing(frozen)
             print("Resuming live stream...")
     cv2.destroyAllWindows()
 

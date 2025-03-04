@@ -46,12 +46,14 @@ def overlay_regions(img, alpha=0.4):
     return cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
 
 def get_polygons_for_point(point, polygons):
-    import cv2
-    import numpy as np
+    """
+    Given a point (x,y) and a list of region polygons (each a dict with "type" and "points"),
+    return a list of region types that contain the point.
+    """
     inside = []
     for poly in polygons:
         pts = np.array(poly["points"], dtype=np.int32)
-        # Returns >= 0 if the point is inside or on the edge.
+        # cv2.pointPolygonTest returns a positive value if the point is inside, 0 if on the edge, negative if outside.
         if cv2.pointPolygonTest(pts, point, False) >= 0:
             inside.append(poly["type"])
     return inside
