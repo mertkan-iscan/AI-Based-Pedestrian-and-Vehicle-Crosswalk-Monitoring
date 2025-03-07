@@ -7,7 +7,7 @@ import os
 points = []                  # Points for the current polygon
 region_polygons = []         # List of dicts, each with "type" and "points"
 current_region_type = "crosswalk"  # Default area type
-region_json_file = "polygons.json"
+region_json_file = "config/polygons.json"
 
 # Colors for each region type (BGR)
 area_colors = {

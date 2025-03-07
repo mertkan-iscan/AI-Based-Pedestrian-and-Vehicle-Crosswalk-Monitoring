@@ -1,9 +1,12 @@
 import cv2
 import torch
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # Load YOLOv5s (you can swap this model with your own)
-model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
+model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True)
 # Detect persons (0), cars (2), motorcycles (3)
 model.classes = [0, 2, 3]
 model.to(device)

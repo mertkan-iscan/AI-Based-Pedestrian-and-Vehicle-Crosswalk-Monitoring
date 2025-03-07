@@ -3,7 +3,7 @@ import os
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 
-CONFIG_FILE = "locations.json"
+CONFIG_FILE = "config/locations.json"
 
 def load_locations():
     """

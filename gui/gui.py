@@ -1,4 +1,3 @@
-# gui.py
 import tkinter as tk
 from tkinter import messagebox
 import threading
@@ -6,15 +5,13 @@ import cv2
 import time
 
 # Import your separate modules
-import location_manager  # Handles loading/adding location configs
-import region_edit  # Contains region editing functions
-from livestream import get_container
-from inference import run_inference
-from tracker import CentroidTracker
+from region import location_manager, region_edit
+from stream.livestream import get_container
+from detection.inference import run_inference
+from detection.tracker import CentroidTracker
 
 # Global variable for the streaming thread
 stream_thread = None
-
 
 class App(tk.Tk):
     def __init__(self):
@@ -29,6 +26,7 @@ class App(tk.Tk):
         # Listbox to display available locations
         self.location_listbox = tk.Listbox(self, height=10)
         self.location_listbox.pack(fill=tk.BOTH, padx=10, pady=10)
+        self.location_listbox.bind('<<ListboxSelect>>', self.on_location_selected)
         self.refresh_location_listbox()
 
         # Button frame
@@ -36,7 +34,6 @@ class App(tk.Tk):
         button_frame.pack(pady=10)
 
         tk.Button(button_frame, text="Add Location", command=self.open_add_location_window).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Select Location", command=self.select_location).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Edit Polygons", command=self.edit_polygons).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Run Stream", command=self.run_stream).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Quit", command=self.quit_app).pack(side=tk.LEFT, padx=5)
@@ -75,6 +72,14 @@ class App(tk.Tk):
             return
 
         region_edit.region_editing(frame)
+
+    def on_location_selected(self, event):
+        try:
+            index = self.location_listbox.curselection()[0]
+            self.selected_location = self.locations[index]
+            print(f"Selected: {self.selected_location['name']}")
+        except IndexError:
+            self.selected_location = None
 
     def run_stream(self):
         if not self.selected_location:
@@ -167,7 +172,7 @@ def get_single_frame(stream_url):
 def run_live_stream(stream_url):
     """
     Run the live stream with YOLO inference, object tracking, and region overlays.
-    This function replicates the logic in your original main.py.
+    This function replicates the logic in your original old_main.py.
     Press 'q' in the OpenCV window to exit the stream.
     """
     SKIP_FRAMES = 4
@@ -258,16 +263,12 @@ def run_live_stream(stream_url):
 
         cv2.namedWindow("Live Stream", cv2.WINDOW_NORMAL)
         cv2.moveWindow("Live Stream", 0, 0)
-        cv2.resizeWindow("Live Stream", 1280, 720)
+        cv2.resizeWindow("Live Stream", 1920, 1080)
         cv2.imshow("Live Stream", img)
+
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
 
     container.close()
     cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    app = App()
-    app.mainloop()
