@@ -7,7 +7,9 @@ import os
 points = []                  # Points for the current polygon
 region_polygons = []         # List of dicts, each with "type" and "points"
 current_region_type = "crosswalk"  # Default area type
-region_json_file = "config/polygons.json"
+
+# Instead of a fixed file, set region_json_file dynamically.
+region_json_file = None
 
 # Colors for each region type (BGR)
 area_colors = {
@@ -16,19 +18,36 @@ area_colors = {
     "sidewalk": (255, 255, 0)    # Light blue
 }
 
+def set_region_file(file_path):
+    """Set the polygon file path dynamically."""
+    global region_json_file
+    region_json_file = file_path
+    print(f"Polygon file set to {region_json_file}")
+
 def load_polygons():
     """Load existing polygons from JSON if it exists."""
-    global region_polygons
+    global region_polygons, region_json_file
+    if not region_json_file:
+        print("No polygon file specified.")
+        return
     if os.path.exists(region_json_file):
         with open(region_json_file, "r") as f:
             region_polygons = json.load(f)
-        print(f"Loaded polygons from {region_json_file}.")
+        print(f"Loaded polygons from {region_json_file}")
+    else:
+        # Initialize an empty list if file does not exist
+        region_polygons.clear()
+        print(f"No existing polygon file at {region_json_file}. Starting fresh.")
 
 def save_polygons():
     """Save the current polygons to JSON."""
+    global region_json_file
+    if not region_json_file:
+        print("No polygon file specified. Cannot save.")
+        return
     with open(region_json_file, "w") as f:
         json.dump(region_polygons, f, indent=4)
-    print(f"Polygon data saved to {region_json_file}.")
+    print(f"Polygon data saved to {region_json_file}")
 
 def overlay_regions(img, alpha=0.4):
     """
@@ -53,11 +72,11 @@ def get_polygons_for_point(point, polygons):
     inside = []
     for poly in polygons:
         pts = np.array(poly["points"], dtype=np.int32)
-        # cv2.pointPolygonTest returns a positive value if the point is inside, 0 if on the edge, negative if outside.
+        # cv2.pointPolygonTest returns a positive value if the point is inside,
+        # 0 if on the edge, negative if outside.
         if cv2.pointPolygonTest(pts, point, False) >= 0:
             inside.append(poly["type"])
     return inside
-
 
 def mouse_callback(event, x, y, flags, param):
     """Record points for the current polygon on left-click."""
@@ -126,7 +145,7 @@ def region_editing(frozen_frame):
                 print("No polygon to delete.")
         elif key == ord('R'):
             region_polygons.clear()
-            if os.path.exists(region_json_file):
+            if region_json_file and os.path.exists(region_json_file):
                 os.remove(region_json_file)
             print("Reset all region polygons.")
         elif key == ord('1'):

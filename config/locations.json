@@ -1,14 +1,12 @@
 [
     {
-        "name": "konya_1",
-        "camera_name": "konya",
-        "stream_url": "https://content.tvkur.com/l/c77ibcnbb2nj4i0fr8cg/master.m3u8",
-        "polygons_file": "polygons.json"
+        "name": "konya_4",
+        "stream_url": "https://content.tvkur.com/l/c77i7s384cnrb6mlji90/master.m3u8",
+        "polygons_file": "config\\location_regions\\polygons_ceadde8b651d469d8004dd5c8038dac7.json"
     },
     {
         "name": "konya_2",
-        "camera_name": "",
-        "stream_url": "https://content.tvkur.com/l/c77i7s384cnrb6mlji90/master.m3u8",
-        "polygons_file": "polygons_778b61aa.json"
+        "stream_url": "https://content.tvkur.com/l/c77ibcnbb2nj4i0fr8cg/master.m3u8",
+        "polygons_file": "config\\location_regions\\polygons_a45a793188794bcfb1e87a103addbb02.json"
     }
 ]
