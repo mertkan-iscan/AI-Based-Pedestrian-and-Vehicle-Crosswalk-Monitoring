@@ -1,139 +1,243 @@
-import tkinter as tk
-from tkinter import messagebox
-import threading
+# gui.py
 import os
 import json
+import uuid
+import time
+import cv2
+import numpy as np
 
-from region import location_manager, region_edit
-from stream.stream_processor import get_single_frame, run_live_stream
+from PyQt5 import QtCore, QtGui, QtWidgets
 
-class App(tk.Tk):
+# Import logic functions from live_stream.py instead of duplicating them
+from stream.live_stream import get_single_frame, stream_generator
+from region import region_edit, location_manager
+
+# ---------------------------
+# QThread for live stream
+# ---------------------------
+class VideoStreamThread(QtCore.QThread):
+    frame_ready = QtCore.pyqtSignal(QtGui.QImage)
+    error_signal = QtCore.pyqtSignal(str)
+
+    def __init__(self, stream_url, polygons_file, parent=None):
+        super().__init__(parent)
+        self.stream_url = stream_url
+        self.polygons_file = polygons_file
+        self._is_running = True
+
+    def run(self):
+        try:
+            # Iterate over frames provided by the stream_generator
+            for img in stream_generator(self.stream_url, self.polygons_file):
+                if not self._is_running:
+                    break
+                # Convert BGR image to RGB QImage and apply .copy() for safety
+                rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                height, width, channel = rgb_image.shape
+                bytes_per_line = 3 * width
+                q_img = QtGui.QImage(rgb_image.data, width, height, bytes_per_line,
+                                     QtGui.QImage.Format_RGB888).copy()
+                self.frame_ready.emit(q_img)
+        except Exception as e:
+            self.error_signal.emit(str(e))
+
+    def stop(self):
+        self._is_running = False
+        self.wait()
+
+# ---------------------------
+# Video Player Window
+# ---------------------------
+class VideoPlayerWindow(QtWidgets.QMainWindow):
+    def __init__(self, location, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Live Stream - {location['name']}")
+        self.resize(800, 600)
+        self.location = location
+        self.initUI()
+        self.start_stream()
+
+    def initUI(self):
+        central_widget = QtWidgets.QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QtWidgets.QVBoxLayout(central_widget)
+
+        self.video_label = QtWidgets.QLabel()
+        self.video_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.video_label.setScaledContents(True)
+        layout.addWidget(self.video_label)
+
+        stop_btn = QtWidgets.QPushButton("Stop Stream")
+        stop_btn.clicked.connect(self.stop_stream)
+        layout.addWidget(stop_btn)
+
+    def start_stream(self):
+        self.stream_thread = VideoStreamThread(self.location["stream_url"], self.location["polygons_file"])
+        self.stream_thread.frame_ready.connect(self.update_frame)
+        self.stream_thread.error_signal.connect(self.handle_error)
+        self.stream_thread.start()
+
+    def update_frame(self, q_img):
+        self.video_label.setPixmap(QtGui.QPixmap.fromImage(q_img))
+
+    def handle_error(self, error_msg):
+        QtWidgets.QMessageBox.critical(self, "Stream Error", error_msg)
+        self.stop_stream()
+
+    def stop_stream(self):
+        if hasattr(self, "stream_thread") and self.stream_thread is not None:
+            self.stream_thread.stop()
+            self.stream_thread = None
+        self.close()
+
+    def closeEvent(self, event):
+        self.stop_stream()
+        event.accept()
+
+# ---------------------------
+# Main Application Window and AddLocationDialog remain unchanged
+# ---------------------------
+class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.title("Pedestrian Cross Monitoring GUI")
-        self.geometry("600x400")
-        self.selected_location = None
+        self.setWindowTitle("Pedestrian Cross Monitoring GUI")
+        self.resize(800, 600)
         self.locations = location_manager.load_locations()
-        self.create_widgets()
+        self.selected_location = None
+        self.initUI()
 
-    def create_widgets(self):
-        # Listbox to display available locations
-        self.location_listbox = tk.Listbox(self, height=10)
-        self.location_listbox.pack(fill=tk.BOTH, padx=10, pady=10)
-        self.location_listbox.bind('<<ListboxSelect>>', self.on_location_selected)
-        self.refresh_location_listbox()
+    def initUI(self):
+        central_widget = QtWidgets.QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QtWidgets.QVBoxLayout(central_widget)
 
-        # Button frame
-        button_frame = tk.Frame(self)
-        button_frame.pack(pady=10)
+        # List of locations
+        self.location_list = QtWidgets.QListWidget()
+        self.refresh_location_list()
+        self.location_list.itemSelectionChanged.connect(self.on_location_selected)
+        layout.addWidget(self.location_list)
 
-        tk.Button(button_frame, text="Add Location", command=self.open_add_location_window).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Edit Polygons", command=self.edit_polygons).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Run Stream", command=self.run_stream).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Delete Location", command=self.delete_location).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Quit", command=self.quit_app).pack(side=tk.LEFT, padx=5)
+        # Buttons panel
+        btn_layout = QtWidgets.QHBoxLayout()
+        add_btn = QtWidgets.QPushButton("Add Location")
+        add_btn.clicked.connect(self.open_add_location_dialog)
+        btn_layout.addWidget(add_btn)
 
-    def refresh_location_listbox(self):
-        self.location_listbox.delete(0, tk.END)
+        edit_btn = QtWidgets.QPushButton("Edit Polygons")
+        edit_btn.clicked.connect(self.edit_polygons)
+        btn_layout.addWidget(edit_btn)
+
+        run_btn = QtWidgets.QPushButton("Run Stream")
+        run_btn.clicked.connect(self.run_stream)
+        btn_layout.addWidget(run_btn)
+
+        delete_btn = QtWidgets.QPushButton("Delete Location")
+        delete_btn.clicked.connect(self.delete_location)
+        btn_layout.addWidget(delete_btn)
+
+        quit_btn = QtWidgets.QPushButton("Quit")
+        quit_btn.clicked.connect(self.close)
+        btn_layout.addWidget(quit_btn)
+
+        layout.addLayout(btn_layout)
+
+    def refresh_location_list(self):
+        self.location_list.clear()
+        self.locations = location_manager.load_locations()
         for loc in self.locations:
-            display_text = f"{loc['name']}"
-            self.location_listbox.insert(tk.END, display_text)
+            self.location_list.addItem(loc["name"])
 
-    def open_add_location_window(self):
-        AddLocationWindow(self)
+    def on_location_selected(self):
+        selected_items = self.location_list.selectedItems()
+        if selected_items:
+            selected_name = selected_items[0].text()
+            for loc in self.locations:
+                if loc["name"] == selected_name:
+                    self.selected_location = loc
+                    break
 
-    def on_location_selected(self, event):
-        try:
-            index = self.location_listbox.curselection()[0]
-            self.selected_location = self.locations[index]
-            print(f"Selected: {self.selected_location['name']}")
-        except IndexError:
-            self.selected_location = None
+    def open_add_location_dialog(self):
+        dialog = AddLocationDialog(self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            self.refresh_location_list()
 
     def edit_polygons(self):
         if not self.selected_location:
-            messagebox.showerror("Error", "Please select a location first.")
+            QtWidgets.QMessageBox.critical(self, "Error", "Please select a location first.")
             return
 
-        # Set the polygon file for the region editor from the selected location
+        from stream.live_stream import get_single_frame
         region_edit.region_json_file = self.selected_location["polygons_file"]
         region_edit.load_polygons()
-
-        # Grab a single frame from the live stream to use for region editing
         frame = get_single_frame(self.selected_location["stream_url"])
         if frame is None:
-            messagebox.showerror("Error", "Could not retrieve a frame from the stream.")
+            QtWidgets.QMessageBox.critical(self, "Error", "Could not retrieve a frame from the stream.")
             return
-
         region_edit.region_editing(frame)
 
     def run_stream(self):
         if not self.selected_location:
-            messagebox.showerror("Error", "Please select a location first.")
+            QtWidgets.QMessageBox.critical(self, "Error", "Please select a location first.")
             return
-
-        # Set the polygon file for the stream
-        region_edit.region_json_file = self.selected_location["polygons_file"]
-        region_edit.load_polygons()
-
-        # Launch the live stream in a new thread so the GUI remains responsive
-        stream_thread = threading.Thread(target=run_live_stream, args=(self.selected_location["stream_url"],))
-        stream_thread.start()
+        self.video_window = VideoPlayerWindow(self.selected_location)
+        self.video_window.show()
 
     def delete_location(self):
         if not self.selected_location:
-            messagebox.showerror("Error", "Please select a location first.")
+            QtWidgets.QMessageBox.critical(self, "Error", "Please select a location first.")
             return
 
-        # Confirm deletion
-        confirm = messagebox.askyesno("Delete Location", f"Are you sure you want to delete '{self.selected_location['name']}'?")
-        if not confirm:
-            return
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Location",
+            f"Are you sure you want to delete '{self.selected_location['name']}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            location_manager.delete_location(self.selected_location)
+            self.selected_location = None
+            self.refresh_location_list()
 
-        # Call the delete function from location_manager
-        location_manager.delete_location(self.selected_location)
-        # Refresh the locations list
-        self.locations = location_manager.load_locations()
-        self.refresh_location_listbox()
-        self.selected_location = None
-
-    def quit_app(self):
-        self.destroy()
-
-
-class AddLocationWindow(tk.Toplevel):
-    """
-    A separate window for adding a new location.
-    """
-    def __init__(self, parent):
+class AddLocationDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.title("Add Location")
-        self.geometry("300x200")
-        self.parent = parent
+        self.setWindowTitle("Add Location")
+        self.resize(300, 200)
+        self.setupUI()
 
-        tk.Label(self, text="Location Name:").pack(pady=5)
-        self.name_entry = tk.Entry(self)
-        self.name_entry.pack(pady=5)
+    def setupUI(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        name_label = QtWidgets.QLabel("Location Name:")
+        self.name_edit = QtWidgets.QLineEdit()
+        layout.addWidget(name_label)
+        layout.addWidget(self.name_edit)
 
-        tk.Label(self, text="Stream URL:").pack(pady=5)
-        self.stream_entry = tk.Entry(self)
-        self.stream_entry.pack(pady=5)
+        stream_label = QtWidgets.QLabel("Stream URL:")
+        self.stream_edit = QtWidgets.QLineEdit()
+        layout.addWidget(stream_label)
+        layout.addWidget(self.stream_edit)
 
-        tk.Button(self, text="Add", command=self.add_location).pack(pady=10)
-        tk.Button(self, text="Cancel", command=self.destroy).pack()
+        btn_layout = QtWidgets.QHBoxLayout()
+        add_btn = QtWidgets.QPushButton("Add")
+        add_btn.clicked.connect(self.add_location)
+        btn_layout.addWidget(add_btn)
+
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
 
     def add_location(self):
-        name = self.name_entry.get().strip()
-        stream_url = self.stream_entry.get().strip()
+        name = self.name_edit.text().strip()
+        stream_url = self.stream_edit.text().strip()
 
         if not name or not stream_url:
-            messagebox.showerror("Error", "Name and Stream URL are required.")
+            QtWidgets.QMessageBox.critical(self, "Error", "Name and Stream URL are required.")
             return
 
-        # Generate a random polygons file name.
         import uuid
+        import os
         polygons_file = os.path.join("config", "location_regions", f"polygons_{uuid.uuid4().hex}.json")
-
         new_loc = {
             "name": name,
             "stream_url": stream_url,
@@ -141,12 +245,10 @@ class AddLocationWindow(tk.Toplevel):
         }
         location_manager.add_location(new_loc)
 
-        # Create the polygons file if it doesn't exist.
         if not os.path.exists(polygons_file):
             with open(polygons_file, "w") as f:
+                import json
                 json.dump([], f, indent=4)
             print(f"Created new polygons file: {polygons_file}")
 
-        self.parent.locations = location_manager.load_locations()
-        self.parent.refresh_location_listbox()
-        self.destroy()
+        self.accept()
