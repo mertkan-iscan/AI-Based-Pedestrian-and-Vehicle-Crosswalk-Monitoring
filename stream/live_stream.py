@@ -1,4 +1,3 @@
-# live_stream.py
 import av
 import streamlink
 import cv2
@@ -8,10 +7,7 @@ from detection.tracker import CentroidTracker
 from region import region_edit
 
 def get_container(url):
-    """
-    Open the HLS stream using streamlink and PyAV,
-    and return the container.
-    """
+
     streams = streamlink.streams(url)
     if "best" not in streams:
         raise Exception("No suitable stream found.")
@@ -29,16 +25,12 @@ def get_container(url):
     return container
 
 def frame_generator(container):
-    """
-    Generator that yields decoded video frames as BGR images.
-    """
+
     for frame in container.decode(video=0):
         yield frame.to_ndarray(format='bgr24')
 
 def get_single_frame(stream_url):
-    """
-    Grab a single frame from the live stream.
-    """
+
     try:
         container = get_container(stream_url)
         for frame in container.decode(video=0):
@@ -50,11 +42,7 @@ def get_single_frame(stream_url):
     return None
 
 def stream_generator(stream_url, polygons_file, skip_frames=4, max_latency=0.5):
-    """
-    Generator that yields processed frames (with detections, tracking,
-    and region overlays) from the live stream.
-    """
-    # Set the region overlay file and load polygons.
+
     region_edit.region_json_file = polygons_file
     region_edit.load_polygons()
 
@@ -71,7 +59,7 @@ def stream_generator(stream_url, polygons_file, skip_frames=4, max_latency=0.5):
     video_stream = container.streams.video[0]
 
     try:
-        # Loop through video frames from container
+
         for frame in container.decode(video=0):
             frame_count += 1
             if base_pts is None:
@@ -98,7 +86,7 @@ def stream_generator(stream_url, polygons_file, skip_frames=4, max_latency=0.5):
             else:
                 detections = prev_detections
 
-            # Draw detections
+
             for det in detections:
                 x1, y1, x2, y2, cls, conf = det
                 label = f"{cls} {conf:.2f}"
@@ -106,7 +94,7 @@ def stream_generator(stream_url, polygons_file, skip_frames=4, max_latency=0.5):
                 cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-            # Update tracker and annotate IDs/foot points
+
             rects_for_tracker = [det[:5] for det in detections]
             objects = tracker.update(rects_for_tracker)
             for objectID, (centroid, bbox) in objects.items():
@@ -120,7 +108,7 @@ def stream_generator(stream_url, polygons_file, skip_frames=4, max_latency=0.5):
                     cv2.putText(img, "Foot", (footX - 20, footY + 15),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
-            # Overlay region polygons and region names
+
             img = region_edit.overlay_regions(img)
             for objectID, (centroid, bbox) in objects.items():
                 if bbox[4] == 0:

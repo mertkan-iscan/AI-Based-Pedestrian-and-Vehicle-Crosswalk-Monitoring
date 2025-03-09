@@ -1,8 +1,5 @@
 import json
 import os
-import uuid
-import tkinter as tk
-from tkinter import simpledialog, messagebox
 
 CONFIG_FILE = "config/locations.json"
 
@@ -24,17 +21,14 @@ def add_location(location):
     print(f"Added location: {location['name']}")
 
 def delete_location(location):
-    """
-    Delete a location from the locations file.
-    Also remove the associated polygons file if it exists.
-    """
+
     locations = load_locations()
-    # Filter out the location to delete. Here, we assume the location is uniquely identified by its dictionary.
+
     updated_locations = [loc for loc in locations if loc != location]
     with open(CONFIG_FILE, "w") as f:
         json.dump(updated_locations, f, indent=4)
     print(f"Deleted location: {location['name']}")
-    # Remove the associated polygons file if it exists.
+
     polygons_file = location.get("polygons_file")
     if polygons_file and os.path.exists(polygons_file):
         os.remove(polygons_file)

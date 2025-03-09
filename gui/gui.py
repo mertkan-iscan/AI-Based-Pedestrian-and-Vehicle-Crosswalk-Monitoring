@@ -1,10 +1,8 @@
 import cv2
 import numpy as np
-import json
 import os
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-# Import logic functions from live_stream.py instead of duplicating them
 from stream.live_stream import get_single_frame, stream_generator
 from region import region_edit, location_manager
 
@@ -21,11 +19,11 @@ class VideoStreamThread(QtCore.QThread):
 
     def run(self):
         try:
-            # Iterate over frames provided by the stream_generator
+
             for img in stream_generator(self.stream_url, self.polygons_file):
                 if not self._is_running:
                     break
-                # Convert BGR image to RGB QImage and apply .copy() for safety
+
                 rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 height, width, channel = rgb_image.shape
                 bytes_per_line = 3 * width
@@ -123,16 +121,7 @@ class ClickableLabel(QtWidgets.QLabel):
         super().mousePressEvent(event)
 
 class RegionEditorDialog(QtWidgets.QDialog):
-    """
-    PyQt tabanlı bölge düzenleme arayüzü.
-    Kullanıcı dondurulmuş çerçeve üzerinde tıklayarak nokta ekler.
-    Aşağıdaki butonlarla:
-      - Poligonu tamamlar,
-      - Mevcut eklenen noktaları temizler,
-      - En son kaydedilmiş poligonu siler,
-      - Tüm poligonları sıfırlar,
-      - Bölge tipini değiştirir.
-    """
+
     def __init__(self, frozen_frame, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Region Editing")
@@ -156,7 +145,6 @@ class RegionEditorDialog(QtWidgets.QDialog):
     def initUI(self):
         layout = QtWidgets.QVBoxLayout(self)
 
-        # Tıklanabilir resim etiketini oluşturuyoruz
         self.image_label = ClickableLabel()
         self.image_label.setAlignment(QtCore.Qt.AlignCenter)
         self.image_label.setMinimumSize(400, 300)
@@ -164,7 +152,6 @@ class RegionEditorDialog(QtWidgets.QDialog):
         self.image_label.clicked.connect(self.add_point)
         layout.addWidget(self.image_label)
 
-        # Bölge tipi butonları
         type_layout = QtWidgets.QHBoxLayout()
         self.crosswalk_btn = QtWidgets.QPushButton("Crosswalk")
         self.crosswalk_btn.clicked.connect(lambda: self.set_region_type("crosswalk"))
@@ -177,7 +164,6 @@ class RegionEditorDialog(QtWidgets.QDialog):
         type_layout.addWidget(self.sidewalk_btn)
         layout.addLayout(type_layout)
 
-        # İşlem butonları
         btn_layout = QtWidgets.QHBoxLayout()
         finalize_btn = QtWidgets.QPushButton("Finalize Polygon")
         finalize_btn.clicked.connect(self.finalize_polygon)
@@ -193,20 +179,15 @@ class RegionEditorDialog(QtWidgets.QDialog):
         btn_layout.addWidget(reset_btn)
         layout.addLayout(btn_layout)
 
-        # Çıkış butonu
         exit_btn = QtWidgets.QPushButton("Exit Editing")
         exit_btn.clicked.connect(self.accept)
         layout.addWidget(exit_btn)
 
     def update_display(self):
-        """
-        Resim üzerine, mevcut kaydedilmiş poligonları (overlay_regions kullanılarak)
-        ve eklenen geçici noktaları çizer, ardından QLabel üzerinde gösterir.
-        """
         img = self.frozen_frame.copy()
-        # Kayıtlı poligonları çiz (overlay_regions ile)
+
         img = region_edit.overlay_regions(img, alpha=0.4)
-        # Geçici poligon (eklenen noktalar) çizimi
+
         if len(self.current_points) > 1:
             cv2.polylines(img, [np.array(self.current_points, dtype=np.int32)],
                           isClosed=False, color=(0, 255, 0), thickness=2)
@@ -219,8 +200,7 @@ class RegionEditorDialog(QtWidgets.QDialog):
         bytes_per_line = 3 * width
         qimg = QtGui.QImage(rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888).copy()
         pixmap = QtGui.QPixmap.fromImage(qimg)
-        # Label boyutu ile karşılaştırıyoruz: Eğer pixmap label boyutundan büyükse, küçültüyoruz (KeepAspectRatio),
-        # aksi halde orijinal boyutta gösteriyoruz.
+
         label_size = self.image_label.size()
         if pixmap.width() > label_size.width() or pixmap.height() > label_size.height():
             scaled_pixmap = pixmap.scaled(label_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
@@ -229,9 +209,7 @@ class RegionEditorDialog(QtWidgets.QDialog):
         self.image_label.setPixmap(scaled_pixmap)
 
     def add_point(self, x, y):
-        """
-        Resme tıklanan noktanın koordinatlarını, orijinal çerçeve boyutlarına göre dönüştürüp ekler.
-        """
+
         label_size = self.image_label.size()
         pixmap = self.image_label.pixmap()
         if pixmap is None:
@@ -364,7 +342,6 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, "Error", "Could not retrieve a frame from the stream.")
             return
 
-        # Call our new PyQt-based region editor dialog
         dialog = RegionEditorDialog(frame, self)
         dialog.exec_()
 

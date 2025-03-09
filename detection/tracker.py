@@ -3,8 +3,8 @@ import numpy as np
 class CentroidTracker:
     def __init__(self, maxDisappeared=50):
         self.nextObjectID = 0
-        self.objects = {}      # objectID -> (centroid, bbox)
-        self.disappeared = {}  # objectID -> consecutive missing frames count
+        self.objects = {}
+        self.disappeared = {}
         self.maxDisappeared = maxDisappeared
 
     def register(self, centroid, bbox):
@@ -19,10 +19,7 @@ class CentroidTracker:
             del self.disappeared[objectID]
 
     def update(self, rects):
-        """
-        Update tracker with a list of detections.
-        Each detection: (x1, y1, x2, y2, cls)
-        """
+
         if len(rects) == 0:
             for objectID in list(self.disappeared.keys()):
                 self.disappeared[objectID] += 1

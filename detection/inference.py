@@ -3,20 +3,16 @@ import torch
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# Load YOLOv5s (you can swap this model with your own)
-model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True)
-# Detect persons (0), cars (2), motorcycles (3)
+
+model = torch.hub.load('ultralytics/yolov5', 'yolov5m', pretrained=True)
+
 model.classes = [0, 2, 3]
 model.to(device)
 model.eval()
 
 def run_inference(img):
-    """
-    Run YOLOv5 inference on a BGR image.
-    Returns a list of detections as tuples: (x1, y1, x2, y2, cls, conf)
-    """
+
     frame_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     with torch.no_grad():
         results = model(frame_rgb)
