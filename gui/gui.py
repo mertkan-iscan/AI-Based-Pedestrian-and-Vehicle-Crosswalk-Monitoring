@@ -9,6 +9,7 @@ from region import region_edit, location_manager
 
 class VideoStreamThread(QtCore.QThread):
     frame_ready = QtCore.pyqtSignal(QtGui.QImage)
+    objects_ready = QtCore.pyqtSignal(list)  # Signal for detected objects list
     error_signal = QtCore.pyqtSignal(str)
 
     def __init__(self, stream_url, polygons_file, parent=None):
@@ -19,8 +20,8 @@ class VideoStreamThread(QtCore.QThread):
 
     def run(self):
         try:
-
-            for img in stream_generator(self.stream_url, self.polygons_file):
+            # NOTE: Ensure your stream_generator yields (img, detected_objects)
+            for img, detected_objects in stream_generator(self.stream_url, self.polygons_file):
                 if not self._is_running:
                     break
 
@@ -30,6 +31,7 @@ class VideoStreamThread(QtCore.QThread):
                 q_img = QtGui.QImage(rgb_image.data, width, height, bytes_per_line,
                                      QtGui.QImage.Format_RGB888).copy()
                 self.frame_ready.emit(q_img)
+                self.objects_ready.emit(detected_objects)
         except Exception as e:
             self.error_signal.emit(str(e))
 
@@ -60,25 +62,39 @@ class VideoPlayerWindow(QtWidgets.QMainWindow):
         self.initUI()
         self.start_stream()
         self.showMaximized()
-        
+
     def initUI(self):
         central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)
-        layout = QtWidgets.QVBoxLayout(central_widget)
 
+        # Create a splitter to show the video and detected objects side by side.
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+
+        # Left side: Video display and Stop button
+        video_widget = QtWidgets.QWidget()
+        video_layout = QtWidgets.QVBoxLayout(video_widget)
         self.video_label = ScalableLabel()
         self.video_label.setAlignment(QtCore.Qt.AlignCenter)
         self.video_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        layout.addWidget(self.video_label)
-
+        video_layout.addWidget(self.video_label)
         stop_btn = QtWidgets.QPushButton("Stop Stream")
         stop_btn.clicked.connect(self.stop_stream)
-        layout.addWidget(stop_btn)
+        video_layout.addWidget(stop_btn)
+        splitter.addWidget(video_widget)
+
+        # Right side: Detected objects list
+        self.objects_list = QtWidgets.QListWidget()
+        splitter.addWidget(self.objects_list)
+        splitter.setSizes([600, 200])  # Adjust initial sizes
+
+        main_layout = QtWidgets.QVBoxLayout(central_widget)
+        main_layout.addWidget(splitter)
 
     def start_stream(self):
         self.stream_thread = VideoStreamThread(self.location["stream_url"],
                                                self.location["polygons_file"])
         self.stream_thread.frame_ready.connect(self.update_frame)
+        self.stream_thread.objects_ready.connect(self.update_detected_objects)
         self.stream_thread.error_signal.connect(self.handle_error)
         self.stream_thread.start()
 
@@ -89,6 +105,13 @@ class VideoPlayerWindow(QtWidgets.QMainWindow):
                                       QtCore.Qt.KeepAspectRatio,
                                       QtCore.Qt.SmoothTransformation)
         self.video_label.setPixmap(scaled_pixmap)
+
+    def update_detected_objects(self, objects):
+
+        self.objects_list.clear()
+        for obj in objects:
+            item_text = f"ID: {obj.id}, Type: {obj.type}, Region: {obj.location}"
+            self.objects_list.addItem(item_text)
 
     def resizeEvent(self, event):
         if self.current_pixmap:
@@ -115,17 +138,17 @@ class VideoPlayerWindow(QtWidgets.QMainWindow):
 
 class ClickableLabel(QtWidgets.QLabel):
     clicked = QtCore.pyqtSignal(int, int)
+
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
             self.clicked.emit(event.x(), event.y())
         super().mousePressEvent(event)
 
-class RegionEditorDialog(QtWidgets.QDialog):
 
+class RegionEditorDialog(QtWidgets.QDialog):
     def __init__(self, frozen_frame, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Region Editing")
-
         self.setWindowFlags(
             QtCore.Qt.Window |
             QtCore.Qt.WindowSystemMenuHint |
@@ -133,7 +156,6 @@ class RegionEditorDialog(QtWidgets.QDialog):
             QtCore.Qt.WindowMaximizeButtonHint |
             QtCore.Qt.WindowCloseButtonHint
         )
-
         self.setSizeGripEnabled(True)
         self.frozen_frame = frozen_frame.copy()
         self.current_points = []
@@ -144,14 +166,12 @@ class RegionEditorDialog(QtWidgets.QDialog):
 
     def initUI(self):
         layout = QtWidgets.QVBoxLayout(self)
-
         self.image_label = ClickableLabel()
         self.image_label.setAlignment(QtCore.Qt.AlignCenter)
         self.image_label.setMinimumSize(400, 300)
         self.image_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.image_label.clicked.connect(self.add_point)
         layout.addWidget(self.image_label)
-
         type_layout = QtWidgets.QHBoxLayout()
         self.crosswalk_btn = QtWidgets.QPushButton("Crosswalk")
         self.crosswalk_btn.clicked.connect(lambda: self.set_region_type("crosswalk"))
@@ -163,7 +183,6 @@ class RegionEditorDialog(QtWidgets.QDialog):
         self.sidewalk_btn.clicked.connect(lambda: self.set_region_type("sidewalk"))
         type_layout.addWidget(self.sidewalk_btn)
         layout.addLayout(type_layout)
-
         btn_layout = QtWidgets.QHBoxLayout()
         finalize_btn = QtWidgets.QPushButton("Finalize Polygon")
         finalize_btn.clicked.connect(self.finalize_polygon)
@@ -178,16 +197,13 @@ class RegionEditorDialog(QtWidgets.QDialog):
         reset_btn.clicked.connect(self.reset_polygons)
         btn_layout.addWidget(reset_btn)
         layout.addLayout(btn_layout)
-
         exit_btn = QtWidgets.QPushButton("Exit Editing")
         exit_btn.clicked.connect(self.accept)
         layout.addWidget(exit_btn)
 
     def update_display(self):
         img = self.frozen_frame.copy()
-
         img = region_edit.overlay_regions(img, alpha=0.4)
-
         if len(self.current_points) > 1:
             cv2.polylines(img, [np.array(self.current_points, dtype=np.int32)],
                           isClosed=False, color=(0, 255, 0), thickness=2)
@@ -200,7 +216,6 @@ class RegionEditorDialog(QtWidgets.QDialog):
         bytes_per_line = 3 * width
         qimg = QtGui.QImage(rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888).copy()
         pixmap = QtGui.QPixmap.fromImage(qimg)
-
         label_size = self.image_label.size()
         if pixmap.width() > label_size.width() or pixmap.height() > label_size.height():
             scaled_pixmap = pixmap.scaled(label_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
@@ -209,7 +224,6 @@ class RegionEditorDialog(QtWidgets.QDialog):
         self.image_label.setPixmap(scaled_pixmap)
 
     def add_point(self, x, y):
-
         label_size = self.image_label.size()
         pixmap = self.image_label.pixmap()
         if pixmap is None:
@@ -267,6 +281,7 @@ class RegionEditorDialog(QtWidgets.QDialog):
         self.update_display()
         super().resizeEvent(event)
 
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -280,33 +295,26 @@ class MainWindow(QtWidgets.QMainWindow):
         central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)
         layout = QtWidgets.QVBoxLayout(central_widget)
-
         self.location_list = QtWidgets.QListWidget()
         self.refresh_location_list()
         self.location_list.itemSelectionChanged.connect(self.on_location_selected)
         layout.addWidget(self.location_list)
-
         btn_layout = QtWidgets.QHBoxLayout()
         add_btn = QtWidgets.QPushButton("Add Location")
         add_btn.clicked.connect(self.open_add_location_dialog)
         btn_layout.addWidget(add_btn)
-
         edit_btn = QtWidgets.QPushButton("Edit Polygons")
         edit_btn.clicked.connect(self.edit_polygons)
         btn_layout.addWidget(edit_btn)
-
         run_btn = QtWidgets.QPushButton("Run Stream")
         run_btn.clicked.connect(self.run_stream)
         btn_layout.addWidget(run_btn)
-
         delete_btn = QtWidgets.QPushButton("Delete Location")
         delete_btn.clicked.connect(self.delete_location)
         btn_layout.addWidget(delete_btn)
-
         quit_btn = QtWidgets.QPushButton("Quit")
         quit_btn.clicked.connect(self.close)
         btn_layout.addWidget(quit_btn)
-
         layout.addLayout(btn_layout)
 
     def refresh_location_list(self):
@@ -333,7 +341,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.selected_location:
             QtWidgets.QMessageBox.critical(self, "Error", "Please select a location first.")
             return
-
         from stream.live_stream import get_single_frame
         region_edit.region_json_file = self.selected_location["polygons_file"]
         region_edit.load_polygons()
@@ -341,7 +348,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if frame is None:
             QtWidgets.QMessageBox.critical(self, "Error", "Could not retrieve a frame from the stream.")
             return
-
         dialog = RegionEditorDialog(frame, self)
         dialog.exec_()
 
@@ -356,7 +362,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.selected_location:
             QtWidgets.QMessageBox.critical(self, "Error", "Please select a location first.")
             return
-
         reply = QtWidgets.QMessageBox.question(
             self,
             "Delete Location",
@@ -367,6 +372,7 @@ class MainWindow(QtWidgets.QMainWindow):
             location_manager.delete_location(self.selected_location)
             self.selected_location = None
             self.refresh_location_list()
+
 
 class AddLocationDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
@@ -381,17 +387,14 @@ class AddLocationDialog(QtWidgets.QDialog):
         self.name_edit = QtWidgets.QLineEdit()
         layout.addWidget(name_label)
         layout.addWidget(self.name_edit)
-
         stream_label = QtWidgets.QLabel("Stream URL:")
         self.stream_edit = QtWidgets.QLineEdit()
         layout.addWidget(stream_label)
         layout.addWidget(self.stream_edit)
-
         btn_layout = QtWidgets.QHBoxLayout()
         add_btn = QtWidgets.QPushButton("Add")
         add_btn.clicked.connect(self.add_location)
         btn_layout.addWidget(add_btn)
-
         cancel_btn = QtWidgets.QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
@@ -400,11 +403,9 @@ class AddLocationDialog(QtWidgets.QDialog):
     def add_location(self):
         name = self.name_edit.text().strip()
         stream_url = self.stream_edit.text().strip()
-
         if not name or not stream_url:
             QtWidgets.QMessageBox.critical(self, "Error", "Name and Stream URL are required.")
             return
-
         import uuid
         import os
         polygons_file = os.path.join("config", "location_regions", f"polygons_{uuid.uuid4().hex}.json")
@@ -414,11 +415,9 @@ class AddLocationDialog(QtWidgets.QDialog):
             "polygons_file": polygons_file
         }
         location_manager.add_location(new_loc)
-
         if not os.path.exists(polygons_file):
             with open(polygons_file, "w") as f:
                 import json
                 json.dump([], f, indent=4)
             print(f"Created new polygons file: {polygons_file}")
-
         self.accept()

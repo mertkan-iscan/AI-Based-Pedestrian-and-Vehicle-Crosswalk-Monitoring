@@ -1,5 +1,15 @@
 import numpy as np
 
+class DetectedObject:
+    def __init__(self, object_id, centroid, bbox):
+        self.id = object_id
+        self.location = centroid
+        self.bbox = bbox
+        self.type = bbox[4] if len(bbox) > 4 else None
+
+    def __repr__(self):
+        return f"DetectedObject(ID={self.id}, location={self.location}, type={self.type})"
+
 class CentroidTracker:
     def __init__(self, maxDisappeared=50):
         self.nextObjectID = 0
@@ -19,7 +29,6 @@ class CentroidTracker:
             del self.disappeared[objectID]
 
     def update(self, rects):
-
         if len(rects) == 0:
             for objectID in list(self.disappeared.keys()):
                 self.disappeared[objectID] += 1
@@ -29,23 +38,18 @@ class CentroidTracker:
 
         inputCentroids = np.zeros((len(rects), 2), dtype="int")
         for i, rect in enumerate(rects):
-
             x1, y1, x2, y2 = rect[:4]
             cX = int((x1 + x2) / 2.0)
             cY = int((y1 + y2) / 2.0)
             inputCentroids[i] = (cX, cY)
 
         if len(self.objects) == 0:
-
             for i in range(len(inputCentroids)):
-
                 self.register(inputCentroids[i], rects[i])
         else:
             objectIDs = list(self.objects.keys())
             objectCentroids = [self.objects[objID][0] for objID in objectIDs]
-
             D = np.linalg.norm(np.array(objectCentroids)[:, np.newaxis] - inputCentroids, axis=2)
-
             rows = D.min(axis=1).argsort()
             cols = D.argmin(axis=1)[rows]
             usedRows = set()
@@ -73,5 +77,4 @@ class CentroidTracker:
             else:
                 for col in unusedCols:
                     self.register(inputCentroids[col], rects[col])
-
         return self.objects

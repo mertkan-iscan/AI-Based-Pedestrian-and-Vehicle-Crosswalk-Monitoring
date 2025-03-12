@@ -5,7 +5,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-model = torch.hub.load('ultralytics/yolov5', 'yolov5m', pretrained=True)
+model = torch.hub.load('ultralytics/yolov5', 'yolov5x6', pretrained=True)
 
 model.classes = [0, 2, 3]
 model.to(device)
@@ -19,6 +19,7 @@ def run_inference(img):
     boxes = results.xyxy[0].cpu().numpy()
     detections = []
     for box in boxes:
+
         x1, y1, x2, y2, conf, cls = box
         detections.append((int(x1), int(y1), int(x2), int(y2), int(cls), conf))
     return detections

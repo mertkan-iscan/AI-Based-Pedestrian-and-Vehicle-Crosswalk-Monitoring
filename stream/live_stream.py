@@ -5,9 +5,9 @@ import time
 from detection.inference import run_inference
 from detection.tracker import CentroidTracker
 from region import region_edit
+from detection.tracker import DetectedObject
 
 def get_container(url):
-
     streams = streamlink.streams(url)
     if "best" not in streams:
         raise Exception("No suitable stream found.")
@@ -25,12 +25,10 @@ def get_container(url):
     return container
 
 def frame_generator(container):
-
     for frame in container.decode(video=0):
         yield frame.to_ndarray(format='bgr24')
 
 def get_single_frame(stream_url):
-
     try:
         container = get_container(stream_url)
         for frame in container.decode(video=0):
@@ -42,7 +40,6 @@ def get_single_frame(stream_url):
     return None
 
 def compute_frame_timing(frame_pts, base_pts, video_stream, start_time):
-
     relative_pts = frame_pts - base_pts if frame_pts is not None else 0
     frame_time = float(relative_pts * video_stream.time_base)
     current_time = time.time() - start_time
@@ -50,7 +47,6 @@ def compute_frame_timing(frame_pts, base_pts, video_stream, start_time):
     return frame_time, current_time, delay
 
 def process_inference_for_frame(img, frame_count, skip_frames, processing_allowed, prev_detections):
-
     if frame_count % skip_frames == 0:
         if processing_allowed:
             detections = run_inference(img)
@@ -62,38 +58,59 @@ def process_inference_for_frame(img, frame_count, skip_frames, processing_allowe
     return detections, prev_detections
 
 def draw_detections(img, detections):
-
     for det in detections:
+
         x1, y1, x2, y2, cls, conf = det
         label = f"{cls} {conf:.2f}"
+
         color = (0, 255, 0) if cls == 0 else (255, 0, 0) if cls == 2 else (255, 0, 255) if cls == 3 else (0, 255, 255)
         cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
         cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
     return img
 
 def update_tracker_and_draw(img, detections, tracker):
 
     rects_for_tracker = [det[:5] for det in detections]
     objects = tracker.update(rects_for_tracker)
+    detected_objects_list = []
+
     for objectID, (centroid, bbox) in objects.items():
+
+        # Create and store a custom detected object
+        detected_obj = DetectedObject(objectID, centroid, bbox)
+
+        detected_objects_list.append(detected_obj)
+
         cv2.putText(img, f"ID {objectID}", (centroid[0] - 10, centroid[1] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
         cv2.circle(img, (centroid[0], centroid[1]), 4, (0, 0, 255), -1)
+
+
         if bbox[4] == 0:
+
             footX = int((bbox[0] + bbox[2]) / 2.0)
             footY = bbox[3]
+
             cv2.circle(img, (footX, footY), 4, (255, 0, 0), -1)
             cv2.putText(img, "Foot", (footX - 20, footY + 15),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-    return img, objects
 
-def draw_region_info(img, objects):
+    return img, detected_objects_list
 
-    for objectID, (centroid, bbox) in objects.items():
+def draw_region_info(img, detected_objects):
+
+    for detected_obj in detected_objects:
+        bbox = detected_obj.bbox
+
         if bbox[4] == 0:
+
             footX = int((bbox[0] + bbox[2]) / 2.0)
             footY = bbox[3]
+
             regions = region_edit.get_polygons_for_point((footX, footY), region_edit.region_polygons)
+
             if regions:
                 region_text = "Region: " + ", ".join(regions)
                 cv2.putText(img, region_text, (bbox[0], bbox[1] - 25),
@@ -101,13 +118,11 @@ def draw_region_info(img, objects):
     return img
 
 def draw_latency_info(img, delay):
-
     latency_text = f"Latency: {abs(delay):.2f} sec"
     cv2.putText(img, latency_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
     return img
 
-def stream_generator(stream_url, polygons_file, skip_frames=4, max_latency=0.5):
-
+def stream_generator(stream_url, polygons_file, skip_frames=2, max_latency=0.5):
     region_edit.region_json_file = polygons_file
     region_edit.load_polygons()
 
@@ -129,7 +144,9 @@ def stream_generator(stream_url, polygons_file, skip_frames=4, max_latency=0.5):
             if base_pts is None:
                 base_pts = frame.pts
 
-            frame_time, current_time, delay = compute_frame_timing(frame.pts, base_pts, video_stream, start_time)
+            frame_time, current_time, delay = compute_frame_timing(
+                frame.pts, base_pts, video_stream, start_time
+            )
 
             processing_allowed = True
             if delay > 0:
@@ -141,20 +158,28 @@ def stream_generator(stream_url, polygons_file, skip_frames=4, max_latency=0.5):
 
             img = frame.to_ndarray(format='bgr24')
 
-            detections, prev_detections = process_inference_for_frame(img, frame_count, skip_frames, processing_allowed, prev_detections)
+            # Perform detection inference
+            detections, prev_detections = process_inference_for_frame(
+                img, frame_count, skip_frames, processing_allowed, prev_detections
+            )
 
+            # Draw bounding boxes
             img = draw_detections(img, detections)
 
+            # Update tracker and draw tracker info
             img, objects = update_tracker_and_draw(img, detections, tracker)
 
+            # Overlay regions
             img = region_edit.overlay_regions(img)
 
+            # Draw region info
             img = draw_region_info(img, objects)
 
+            # Draw latency info
             img = draw_latency_info(img, delay)
 
-
-            yield img
+            # Instead of yielding only `img`, yield both `img` and the list/dict of objects
+            yield (img, objects)
 
     except Exception as e:
         raise Exception(f"Error during streaming: {e}")

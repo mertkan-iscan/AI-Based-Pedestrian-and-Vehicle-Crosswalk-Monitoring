@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="pedestrian_cross_monitoring" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="pedestrian_cross_monitoring" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="pedestrian_cross_cuda" project-jdk-type="Python SDK" />
 </project>
