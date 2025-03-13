@@ -5,7 +5,8 @@ import time
 from detection.inference import run_inference
 from detection.tracker import CentroidTracker
 from region import region_edit
-from detection.tracker import DetectedObject
+from detection.tracker import DetectedObject, calculate_foot_location
+
 
 def get_container(url):
     streams = streamlink.streams(url)
@@ -24,38 +25,55 @@ def get_container(url):
     container = av.open(wrapped)
     return container
 
+
 def frame_generator(container):
     for frame in container.decode(video=0):
         yield frame.to_ndarray(format='bgr24')
 
+
 def get_single_frame(stream_url):
+
     try:
         container = get_container(stream_url)
+
         for frame in container.decode(video=0):
+
             img = frame.to_ndarray(format='bgr24')
             container.close()
+
             return img
+
     except Exception as e:
         print("Error capturing frame:", e)
+
     return None
 
+
 def compute_frame_timing(frame_pts, base_pts, video_stream, start_time):
+
     relative_pts = frame_pts - base_pts if frame_pts is not None else 0
     frame_time = float(relative_pts * video_stream.time_base)
     current_time = time.time() - start_time
     delay = frame_time - current_time
+
     return frame_time, current_time, delay
 
+
 def process_inference_for_frame(img, frame_count, skip_frames, processing_allowed, prev_detections):
+
     if frame_count % skip_frames == 0:
+
         if processing_allowed:
             detections = run_inference(img)
             prev_detections = detections.copy()
         else:
             detections = prev_detections
+
     else:
         detections = prev_detections
+
     return detections, prev_detections
+
 
 def draw_detections(img, detections):
     for det in detections:
@@ -69,60 +87,65 @@ def draw_detections(img, detections):
 
     return img
 
+
+def get_region_info(coord):
+
+    loc = (int(coord[0]), int(coord[1]))
+    regions = region_edit.get_polygons_for_point(loc, region_edit.region_polygons)
+
+    return regions[0] if regions else "unknown"
+
+
 def update_tracker_and_draw(img, detections, tracker):
 
+    font = cv2.FONT_HERSHEY_SIMPLEX
     rects_for_tracker = [det[:5] for det in detections]
     objects = tracker.update(rects_for_tracker)
+
     detected_objects_list = []
 
     for objectID, (centroid, bbox) in objects.items():
 
-        # Create and store a custom detected object
-        detected_obj = DetectedObject(objectID, centroid, bbox)
+        if len(bbox) < 5:
+            continue
 
-        detected_objects_list.append(detected_obj)
+        object_type = DetectedObject.CLASS_NAMES.get(bbox[4], "unknown")
+        foot = calculate_foot_location(bbox) if bbox[4] == 0 else None
+        location = foot if object_type == "person" and foot is not None else centroid
+        region = get_region_info(location)
+
+        detected_obj = DetectedObject(objectID, object_type, centroid, foot, region)
 
         cv2.putText(img, f"ID {objectID}", (centroid[0] - 10, centroid[1] - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-
+                    font, 0.5, (0, 0, 255), 2)
         cv2.circle(img, (centroid[0], centroid[1]), 4, (0, 0, 255), -1)
 
+        if foot is not None:
+            cv2.circle(img, foot, 4, (255, 0, 0), -1)
+            cv2.putText(img, "Foot", (foot[0] - 20, foot[1] + 15),
+                        font, 0.5, (255, 0, 0), 2)
 
-        if bbox[4] == 0:
-
-            footX = int((bbox[0] + bbox[2]) / 2.0)
-            footY = bbox[3]
-
-            cv2.circle(img, (footX, footY), 4, (255, 0, 0), -1)
-            cv2.putText(img, "Foot", (footX - 20, footY + 15),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        detected_objects_list.append(detected_obj)
 
     return img, detected_objects_list
 
 def draw_region_info(img, detected_objects):
 
     for detected_obj in detected_objects:
-        bbox = detected_obj.bbox
 
-        if bbox[4] == 0:
+        if detected_obj.object_type == "person" and detected_obj.foot_coordinates is not None:
+            loc = (int(detected_obj.foot_coordinates[0]), int(detected_obj.foot_coordinates[1]))
+        else:
+            loc = (int(detected_obj.centroid_coordinates[0]), int(detected_obj.centroid_coordinates[1]))
 
-            footX = int((bbox[0] + bbox[2]) / 2.0)
-            footY = bbox[3]
+        if detected_obj.region != "unknown":
+            cv2.putText(img, "Region: " + detected_obj.region, (loc[0], loc[1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
 
-            regions = region_edit.get_polygons_for_point((footX, footY), region_edit.region_polygons)
-
-            if regions:
-                region_text = "Region: " + ", ".join(regions)
-                cv2.putText(img, region_text, (bbox[0], bbox[1] - 25),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
     return img
 
-def draw_latency_info(img, delay):
-    latency_text = f"Latency: {abs(delay):.2f} sec"
-    cv2.putText(img, latency_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
-    return img
 
-def stream_generator(stream_url, polygons_file, skip_frames=2, max_latency=0.5):
+def stream_generator(stream_url, polygons_file, skip_frames=2, max_latency=0.5, max_frame_gap=5.0):
     region_edit.region_json_file = polygons_file
     region_edit.load_polygons()
 
@@ -138,9 +161,17 @@ def stream_generator(stream_url, polygons_file, skip_frames=2, max_latency=0.5):
     start_time = time.time()
     video_stream = container.streams.video[0]
 
+    last_frame_time = time.time()
+
     try:
         for frame in container.decode(video=0):
+
             frame_count += 1
+
+            #variable for stream health check
+            gap = check_stream_health(last_frame_time, max_frame_gap)
+            last_frame_time = time.time()
+
             if base_pts is None:
                 base_pts = frame.pts
 
@@ -185,3 +216,20 @@ def stream_generator(stream_url, polygons_file, skip_frames=2, max_latency=0.5):
         raise Exception(f"Error during streaming: {e}")
     finally:
         container.close()
+
+
+def check_stream_health(last_frame_time, max_frame_gap):
+
+    current_time = time.time()
+    gap = current_time - last_frame_time
+
+    if gap > max_frame_gap:
+        print(f"WARNING: No frames received for {gap:.1f}s (exceeds {max_frame_gap}s). Slow or stalled stream?")
+
+    return gap
+
+
+def draw_latency_info(img, delay):
+    latency_text = f"Latency: {abs(delay):.2f} sec"
+    cv2.putText(img, latency_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+    return img

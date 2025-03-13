@@ -110,7 +110,7 @@ class VideoPlayerWindow(QtWidgets.QMainWindow):
 
         self.objects_list.clear()
         for obj in objects:
-            item_text = f"ID: {obj.id}, Type: {obj.type}, Region: {obj.location}"
+            item_text = f"ID: {obj.id}, Type: {obj.object_type}, Region: {obj.region}"
             self.objects_list.addItem(item_text)
 
     def resizeEvent(self, event):
@@ -134,7 +134,6 @@ class VideoPlayerWindow(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         self.stop_stream()
         event.accept()
-
 
 class ClickableLabel(QtWidgets.QLabel):
     clicked = QtCore.pyqtSignal(int, int)

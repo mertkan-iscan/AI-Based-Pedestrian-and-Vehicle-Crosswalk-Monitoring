@@ -1,14 +1,39 @@
 import numpy as np
 
 class DetectedObject:
-    def __init__(self, object_id, centroid, bbox):
+    CLASS_NAMES = {0: "person", 2: "car", 3: "truck"}
+
+    def __init__(self,
+                 object_id,
+                 object_type,
+                 centroid_coordinates,
+                 foot_coordinates,
+                 region):
+
         self.id = object_id
-        self.location = centroid
-        self.bbox = bbox
-        self.type = bbox[4] if len(bbox) > 4 else None
+        self.object_type = object_type
+        self.centroid_coordinates = centroid_coordinates
+        #only person class has foot coordinates
+        self.foot_coordinates = foot_coordinates if object_type == "person" else None
+        self.region = region
 
     def __repr__(self):
-        return f"DetectedObject(ID={self.id}, location={self.location}, type={self.type})"
+        return (f"DetectedObject(ID={self.id}, type={self.object_type}, "
+                f"region={self.region}, centroid={self.centroid_coordinates}, "
+                f"foot={self.foot_coordinates})")
+
+
+def calculate_foot_location(bbox):
+
+    if not (isinstance(bbox, (list, tuple)) and len(bbox) >= 4):
+        raise ValueError("bbox must be a list or tuple with at least 4 elements: [x1, y1, x2, y2]")
+
+    x1, y1, x2, y2 = bbox[:4]
+    foot_x = int((x1 + x2) / 2)
+    foot_y = y2
+
+    return foot_x, foot_y
+
 
 class CentroidTracker:
     def __init__(self, maxDisappeared=50):
