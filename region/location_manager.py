@@ -1,7 +1,7 @@
 import json
 import os
 
-CONFIG_FILE = "config/locations.json"
+CONFIG_FILE = "resources/locations.json"
 
 def load_locations():
     if not os.path.exists(CONFIG_FILE):

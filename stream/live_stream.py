@@ -2,10 +2,14 @@ import av
 import streamlink
 import cv2
 import time
-from detection.inference import run_inference
-from detection.tracker import CentroidTracker
+
 from region import region_edit
-from detection.tracker import DetectedObject, calculate_foot_location
+
+from detection.detected_object import DetectedObject
+from detection.inference import run_inference
+
+from detection.tracker import CentroidTracker
+from detection.tracker import calculate_foot_location
 
 
 def get_container(url):
@@ -96,25 +100,35 @@ def get_region_info(coord):
     return regions[0] if regions else "unknown"
 
 
-def update_tracker_and_draw(img, detections, tracker):
-
+def update_tracker_and_draw(img, detections, tracker, persistent_objects):
     font = cv2.FONT_HERSHEY_SIMPLEX
     rects_for_tracker = [det[:5] for det in detections]
     objects = tracker.update(rects_for_tracker)
-
     detected_objects_list = []
 
     for objectID, (centroid, bbox) in objects.items():
-
         if len(bbox) < 5:
             continue
 
         object_type = DetectedObject.CLASS_NAMES.get(bbox[4], "unknown")
-        foot = calculate_foot_location(bbox) if bbox[4] == 0 else None
-        location = foot if object_type == "person" and foot is not None else centroid
+        foot = calculate_foot_location(bbox) if (object_type == "person" and bbox[4] == 0) else None
+        location = foot if (object_type == "person" and foot is not None) else centroid
         region = get_region_info(location)
 
-        detected_obj = DetectedObject(objectID, object_type, centroid, foot, region)
+        if objectID in persistent_objects:
+
+            detected_obj = persistent_objects[objectID]
+
+            detected_obj.update_centroid(centroid)
+            if object_type == "person" and foot is not None:
+                detected_obj.update_foot(foot)
+
+            detected_obj.region = region
+
+        else:
+            detected_obj = DetectedObject(objectID, object_type, centroid, foot, region)
+            persistent_objects[objectID] = detected_obj
+
 
         cv2.putText(img, f"ID {objectID}", (centroid[0] - 10, centroid[1] - 10),
                     font, 0.5, (0, 0, 255), 2)
@@ -129,14 +143,15 @@ def update_tracker_and_draw(img, detections, tracker):
 
     return img, detected_objects_list
 
+
 def draw_region_info(img, detected_objects):
 
     for detected_obj in detected_objects:
 
-        if detected_obj.object_type == "person" and detected_obj.foot_coordinates is not None:
-            loc = (int(detected_obj.foot_coordinates[0]), int(detected_obj.foot_coordinates[1]))
+        if detected_obj.object_type == "person" and detected_obj.foot_coordinate is not None:
+            loc = (int(detected_obj.foot_coordinate[0]), int(detected_obj.foot_coordinate[1]))
         else:
-            loc = (int(detected_obj.centroid_coordinates[0]), int(detected_obj.centroid_coordinates[1]))
+            loc = (int(detected_obj.centroid_coordinate[0]), int(detected_obj.centroid_coordinate[1]))
 
         if detected_obj.region != "unknown":
             cv2.putText(img, "Region: " + detected_obj.region, (loc[0], loc[1] - 10),
@@ -146,10 +161,12 @@ def draw_region_info(img, detected_objects):
 
 
 def stream_generator(stream_url, polygons_file, skip_frames=2, max_latency=0.5, max_frame_gap=5.0):
+    persistent_objects = {}
     region_edit.region_json_file = polygons_file
     region_edit.load_polygons()
 
     tracker = CentroidTracker(maxDisappeared=40)
+
     try:
         container = get_container(stream_url)
     except Exception as e:
@@ -198,7 +215,7 @@ def stream_generator(stream_url, polygons_file, skip_frames=2, max_latency=0.5, 
             img = draw_detections(img, detections)
 
             # Update tracker and draw tracker info
-            img, objects = update_tracker_and_draw(img, detections, tracker)
+            img, objects = update_tracker_and_draw(img, detections, tracker, persistent_objects)
 
             # Overlay regions
             img = region_edit.overlay_regions(img)

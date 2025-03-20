@@ -407,7 +407,7 @@ class AddLocationDialog(QtWidgets.QDialog):
             return
         import uuid
         import os
-        polygons_file = os.path.join("config", "location_regions", f"polygons_{uuid.uuid4().hex}.json")
+        polygons_file = os.path.join("resources", "location_regions", f"polygons_{uuid.uuid4().hex}.json")
         new_loc = {
             "name": name,
             "stream_url": stream_url,

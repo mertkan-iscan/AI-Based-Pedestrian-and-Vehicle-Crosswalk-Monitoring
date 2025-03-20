@@ -5,7 +5,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-model = torch.hub.load('ultralytics/yolov5', 'yolov5x6', pretrained=True)
+model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True)
 
 model.classes = [0, 2, 3]
 model.to(device)

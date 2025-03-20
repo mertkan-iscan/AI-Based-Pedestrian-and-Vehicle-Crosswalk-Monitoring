@@ -1,27 +1,5 @@
 import numpy as np
 
-class DetectedObject:
-    CLASS_NAMES = {0: "person", 2: "car", 3: "truck"}
-
-    def __init__(self,
-                 object_id,
-                 object_type,
-                 centroid_coordinates,
-                 foot_coordinates,
-                 region):
-
-        self.id = object_id
-        self.object_type = object_type
-        self.centroid_coordinates = centroid_coordinates
-        #only person class has foot coordinates
-        self.foot_coordinates = foot_coordinates if object_type == "person" else None
-        self.region = region
-
-    def __repr__(self):
-        return (f"DetectedObject(ID={self.id}, type={self.object_type}, "
-                f"region={self.region}, centroid={self.centroid_coordinates}, "
-                f"foot={self.foot_coordinates})")
-
 
 def calculate_foot_location(bbox):
 
@@ -54,6 +32,7 @@ class CentroidTracker:
             del self.disappeared[objectID]
 
     def update(self, rects):
+
         if len(rects) == 0:
             for objectID in list(self.disappeared.keys()):
                 self.disappeared[objectID] += 1
@@ -62,6 +41,7 @@ class CentroidTracker:
             return self.objects
 
         inputCentroids = np.zeros((len(rects), 2), dtype="int")
+
         for i, rect in enumerate(rects):
             x1, y1, x2, y2 = rect[:4]
             cX = int((x1 + x2) / 2.0)
