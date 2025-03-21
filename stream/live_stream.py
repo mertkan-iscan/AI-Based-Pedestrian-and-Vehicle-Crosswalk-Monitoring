@@ -9,8 +9,9 @@ from detection.detected_object import DetectedObject
 from detection.inference import run_inference
 
 from detection.tracker import CentroidTracker
-from detection.tracker import calculate_foot_location
+from detection.inference import calculate_foot_location
 
+from detection.path_updater import task_queue
 
 def get_container(url):
     streams = streamlink.streams(url)
@@ -121,6 +122,8 @@ def update_tracker_and_draw(img, detections, tracker, persistent_objects):
 
             detected_obj.update_centroid(centroid)
             if object_type == "person" and foot is not None:
+
+                task_queue.put(('update', objectID, foot))
                 detected_obj.update_foot(foot)
 
             detected_obj.region = region
@@ -128,6 +131,9 @@ def update_tracker_and_draw(img, detections, tracker, persistent_objects):
         else:
             detected_obj = DetectedObject(objectID, object_type, centroid, foot, region)
             persistent_objects[objectID] = detected_obj
+
+            if object_type == "person" and foot is not None:
+                task_queue.put(('update', objectID, foot))
 
 
         cv2.putText(img, f"ID {objectID}", (centroid[0] - 10, centroid[1] - 10),

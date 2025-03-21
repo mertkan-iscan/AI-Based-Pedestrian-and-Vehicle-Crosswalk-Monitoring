@@ -1,12 +1,38 @@
 import sys
+import threading
 from PyQt5 import QtWidgets
 from gui.gui import MainWindow
+from detection.path_updater import dynamic_task_processor, task_queue
+from database.db_manager import DBManager
+
 
 def main():
+    # Initialize the DB manager.
+    db = DBManager()
+    pool_size = 4  # Adjust based on your load.
+
+    # Start the dynamic task processor in its own thread.
+    task_processor_thread = threading.Thread(
+        target=dynamic_task_processor, args=(db, pool_size)
+    )
+    task_processor_thread.daemon = True
+    task_processor_thread.start()
+    print("path DB recorder started")
+
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
+
+    def shutdown():
+        # Enqueue one sentinel value per worker to signal shutdown.
+        for _ in range(pool_size):
+            task_queue.put(None)
+        task_processor_thread.join()
+        db.close()
+
+    app.aboutToQuit.connect(shutdown)
     window.show()
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     main()

@@ -1,4 +1,5 @@
 class DetectedObject:
+
     CLASS_NAMES = {0: "person", 2: "car", 3: "truck"}
 
     def __init__(self,
@@ -14,7 +15,6 @@ class DetectedObject:
         self.centroid_coordinate = centroid_coordinate
         #only person class has foot coordinates
         self.foot_coordinate = foot_coordinate if object_type == "person" else None
-        self.path_coordinates = []
 
         self.region = region
 
