@@ -14,10 +14,9 @@ class DBManager:
                 os.makedirs(resources_dir)
             db_file = os.path.join(resources_dir, 'object_paths.db')
 
-        # Allow connection to be shared across threads.
         self.conn = sqlite3.connect(db_file, check_same_thread=False)
         self.cursor = self.conn.cursor()
-        self.lock = threading.Lock()  # lock for DB writes
+        self.lock = threading.Lock()
         self.create_table()
 
     def create_table(self):

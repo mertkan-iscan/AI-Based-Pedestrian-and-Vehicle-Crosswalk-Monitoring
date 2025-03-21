@@ -7,11 +7,9 @@ from database.db_manager import DBManager
 
 
 def main():
-    # Initialize the DB manager.
     db = DBManager()
-    pool_size = 4  # Adjust based on your load.
+    pool_size = 4
 
-    # Start the dynamic task processor in its own thread.
     task_processor_thread = threading.Thread(
         target=dynamic_task_processor, args=(db, pool_size)
     )
@@ -23,7 +21,7 @@ def main():
     window = MainWindow()
 
     def shutdown():
-        # Enqueue one sentinel value per worker to signal shutdown.
+
         for _ in range(pool_size):
             task_queue.put(None)
         task_processor_thread.join()
