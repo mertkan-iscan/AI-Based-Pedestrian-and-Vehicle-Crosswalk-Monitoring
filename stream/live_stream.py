@@ -8,7 +8,7 @@ from region import region_edit
 from detection.detected_object import DetectedObject
 from detection.inference import run_inference
 
-from detection.tracker import CentroidTracker
+from detection.tracker import DeepSortTracker
 from detection.inference import calculate_foot_location
 
 from detection.path_updater import task_queue
@@ -171,7 +171,7 @@ def stream_generator(stream_url, polygons_file, skip_frames=2, max_latency=0.5, 
     region_edit.region_json_file = polygons_file
     region_edit.load_polygons()
 
-    tracker = CentroidTracker(maxDisappeared=40)
+    tracker = DeepSortTracker(maxDisappeared=40)
 
     try:
         container = get_container(stream_url)

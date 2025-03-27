@@ -4,7 +4,7 @@ from PyQt5 import QtWidgets
 from gui.gui import MainWindow
 from detection.path_updater import dynamic_task_processor, task_queue
 from database.db_manager import DBManager
-
+import qdarkstyle
 
 def main():
     db = DBManager()
@@ -13,11 +13,13 @@ def main():
     task_processor_thread = threading.Thread(
         target=dynamic_task_processor, args=(db, pool_size)
     )
+
     task_processor_thread.daemon = True
     task_processor_thread.start()
     print("path DB recorder started")
 
     app = QtWidgets.QApplication(sys.argv)
+    app.setStyleSheet(qdarkstyle.load_stylesheet_pyqt5())
     window = MainWindow()
 
     def shutdown():

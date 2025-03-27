@@ -44,6 +44,6 @@ def dynamic_task_processor(db_manager, pool_size=4):
             task = task_queue.get()
             if task is None:
                 task_queue.task_done()
-                break  # Sentinel encountered: exit the loop.
+                break
             executor.submit(process_task, task, db_manager)
             task_queue.task_done()
